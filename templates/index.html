@@ -1,65 +1,217 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Fire Detection</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Montserrat', sans-serif;
-            background-color: #fff;
-            text-align: center;
-            margin: 100px;
-            padding: 0;
-        }
-    
-        h1 {
-            font-weight: 400;
-            font-size: 45px;
-            padding-bottom: 10px;
-        }
-    
-        button {
-            padding: 20px 20px 20px 20px;
-            background-color: #fff6f6; /* Initial background color */
-            color: red; /* Initial text color */
-            border: 1px solid red; /* Initial border color and width */
-            font-size: 18px;
-            cursor: pointer;
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 500;
-            border-radius: 2px;
-            transition: background-color 0.3s, color 0.3s; /* Transition effect on background and text color */
-        }
-    
-        button:hover {
-            background-color: red; /* Background color on hover */
-            color: #fff; /* Text color on hover */
-        }
-    
-        .icon img {
-            width: 1em;
-            height: 1em;
-            margin-right: 10px;
-        }
-    
-        p {
-            font-size: 25px;
-            font-weight: 300;
-            padding-bottom: 5px;
-        }
-    
-        form {
-            margin: 20px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Fire Detection</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+
+    h1 {
+      font-size: 2em;
+      font-weight: 600;
+      color: #d9534f;
+    }
+
+    #resultImage {
+      width: 480px;
+      height: 360px;
+      border: 2px solid #333;
+      border-radius: 8px;
+      background-color: #000;
+    }
+
+    video.hidden {
+      display: none;
+    }
+
+    canvas.hidden {
+      display: none;
+    }
+
+    .controls, .log-box {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background-color: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      flex-wrap: wrap;
+    }
+
+    .log-box {
+      flex-direction: column;
+      width: 480px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 80px;
+      padding: 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 4px;
+      border: none;
+      color: white;
+      cursor: pointer;
+    }
+
+    button.start {
+      background-color: #28a745;
+    }
+
+    button.stop {
+      background-color: #dc3545;
+    }
+
+    #detectionResult {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    select {
+      padding: 8px;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
-    <h1><span class="icon"> <img src="static/images/fire.png" ></span> Fire Detection Using YOLOv8</h1>
-    <p>Detect fires in real-time using your webcam with our YOLOv8 model, <br>enhancing safety and security</p>
-    <form action="/detect" method="post">
-        <button type="submit">Run Fire Detection</button>
-    </form>
+
+  <h1>🔥 Fire Detection Using YOLOv8</h1>
+
+  <!-- Annotated detection result -->
+  <img id="resultImage" alt="Annotated detection image" />
+
+  <!-- Hidden live video feed and canvas for frame capture -->
+  <video id="videoFeed" autoplay playsinline class="hidden"></video>
+  <canvas id="canvas" class="hidden"></canvas>
+
+  <div class="controls">
+    <label for="intervalSelect">Interval:</label>
+    <select id="intervalSelect">
+      <option value="500">0.5s</option>
+      <option value="1000" selected>1s</option>
+      <option value="2000">2s</option>
+      <option value="5000">5s</option>
+    </select>
+    <button id="startButton" class="start">Start Detection</button>
+  </div>
+
+  <div id="detectionResult">Detection not started.</div>
+
+  <div class="log-box">
+    <label for="logText">Log:</label>
+    <textarea id="logText" readonly></textarea>
+  </div>
+
+  <script>
+    const video = document.getElementById('videoFeed');
+    const canvas = document.getElementById('canvas');
+    const resultImage = document.getElementById('resultImage');
+    const startButton = document.getElementById('startButton');
+    const intervalSelect = document.getElementById('intervalSelect');
+    const detectionResult = document.getElementById('detectionResult');
+    const logText = document.getElementById('logText');
+
+    let stream;
+    let intervalId = null;
+    let isRunning = false;
+
+    async function initCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        log("Camera access granted.");
+      } catch (err) {
+        log("Camera error: " + err.message);
+        alert("Camera error: " + err.message);
+      }
+    }
+
+    function captureFrame() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.8);
+    }
+
+    async function detectFire() {
+      const imageData = captureFrame();
+      const response = await fetch('/detect_from_image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData })
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        detectionResult.innerText = "❌ Detection error";
+        log("Detection error: " + err);
+        return;
+      }
+
+      const data = await response.json();
+
+      // Show annotated image
+      resultImage.src = data.image;
+
+      // Show detection result
+      if (data.fire) {
+        detectionResult.innerText = "🔥 FIRE DETECTED!";
+        log("🔥 Fire detected (" + data.num_detections + ")");
+      } else {
+        detectionResult.innerText = "✅ No fire";
+        log("No fire");
+      }
+    }
+
+    function log(msg) {
+      const timestamp = new Date().toLocaleTimeString();
+      logText.value = `[${timestamp}] ${msg}\n` + logText.value;
+    }
+
+    function toggleDetection() {
+      if (isRunning) {
+        clearInterval(intervalId);
+        intervalId = null;
+        isRunning = false;
+        startButton.innerText = "Start Detection";
+        startButton.classList.remove("stop");
+        startButton.classList.add("start");
+        detectionResult.innerText = "Detection stopped.";
+        log("Detection stopped.");
+      } else {
+        const interval = parseInt(intervalSelect.value);
+        intervalId = setInterval(detectFire, interval);
+        isRunning = true;
+        startButton.innerText = "Stop Detection";
+        startButton.classList.remove("start");
+        startButton.classList.add("stop");
+        detectFire(); // Run once immediately
+        log("Detection started.");
+      }
+    }
+
+    startButton.addEventListener('click', toggleDetection);
+    window.addEventListener('DOMContentLoaded', initCamera);
+  </script>
 </body>
 </html>
