@@ -56,7 +56,7 @@ pip install -r requirements.txt
 ```bash
 python app.py
 ```
-2 - Open your web browser and go to `http://127.0.0.1:5000/` to access the app.
+2 - Open your web browser and go to `http://127.0.0.1:9000/` to access the app.
 
 ### Contributing
 Feel free to contribute to the development of this project by opening issues or creating pull requests.
